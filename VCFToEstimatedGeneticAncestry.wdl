@@ -55,6 +55,7 @@ workflow VCFToEstimatedGeneticAncestry {
         File outputVcf = subset.outputVcf
         File outputVcfIndex = subset.outputVcfIndex
         File bedFile = admixture.bedFile
+        File qFile = admixture.qFile
     }
 
     # This option allows users to set options relative to embedded tasks/workflows

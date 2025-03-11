@@ -16,6 +16,7 @@ workflow SubsetToSNPs {
         File referenceFasta
         File referenceFastaDict
         File referenceFastaFai
+        Boolean genotype = false
     }
     String vcfBase = basename(vcf, ".vcf.gz")
 
@@ -25,49 +26,59 @@ workflow SubsetToSNPs {
         allowNestedInputs: true
     }
     
+    if (genotype) {
+        ##-------------------------------------------------------
+        ## Genotype VCF in case the positions are marked as [REF]
+        ## instead of the actual base.
+        ##
+        #-- Index before running anything (just in case)
+        # Input: File vcf
+        call bcftools.Index as bcfIndexBeforeGenotyping {
+            input: 
+                vcf = vcf
+        }
+        # File outputVcf
+        # File? outputVcfIndex
 
-    ##-------------------------------------------------------
-    ## Genotype VCF in case the positions are marked as [REF]
-    ## instead of the actual base.
-    ##
-    #-- Index before running anything (just in case)
-    # Input: File vcf
-    call bcftools.Index as bcfIndexBeforeGenotyping {
-        input: 
-            vcf = vcf
+        #-- Genotype
+        call gatk.GenotypeGVCFs as genotypeVCF {
+            input:
+                gvcfFile = bcfIndexBeforeGenotyping.outputVcf,
+                gvcfFileIndex = bcfIndexBeforeGenotyping.outputVcfIndex,
+                outputPath = vcfBase + "_genotyped.vcf.gz",
+
+                # Annotation required for genotyping
+                referenceFasta = referenceFasta,
+                referenceFastaDict = referenceFastaDict,
+                referenceFastaFai = referenceFastaFai
+        }
+        #-- Reindex
+        # Input: File vcf
+        call bcftools.Index as bcfIndexAfterGenotyping {
+            input:
+                vcf = genotypeVCF.outputVCF
+        }
+        # File outputVcf
+        # File? outputVcfIndex
     }
-    # File outputVcf
-    # File? outputVcfIndex
 
-    #-- Genotype
-    call gatk.GenotypeGVCFs as genotypeVCF {
-        input:
-            gvcfFile = bcfIndexBeforeGenotyping.outputVcf,
-            gvcfFileIndex = bcfIndexBeforeGenotyping.outputVcfIndex,
-            outputPath = vcfBase + "_genotyped.vcf.gz",
-
-            # Annotation required for genotyping
-            referenceFasta = referenceFasta,
-            referenceFastaDict = referenceFastaDict,
-            referenceFastaFai = referenceFastaFai
+    if (!genotype) {
+        call bcftools.Index as bcfIndex {
+            input:
+                vcf = vcf
+        }
+        # File outputVcf
+        # File? outputVcfIndex
     }
-    #-- Reindex
-    # Input: File vcf
-    call bcftools.Index as bcfIndexAfterGenotyping {
-        input:
-            vcf = genotypeVCF.outputVCF
-    }
-    # File outputVcf
-    # File? outputVcfIndex
-  
-
+   
+    File indexedVcf = select_first([bcfIndex.outputVcf, bcfIndexAfterGenotyping.outputVcf])
 
     ##-------------------------------------------------------
     ## Rename chromosomes in the vcf (chr1 -> 1)
     # Input:  File vcf
     call renamechromosomes.RenameChromosomes as rename {
         input:
-            vcfFile = bcfIndexAfterGenotyping.outputVcf
+            vcfFile = indexedVcf
     }
     # Output: File outputVcf
     # Output: File outputVcfIndex
@@ -110,7 +121,8 @@ workflow SubsetToSNPs {
     # Output: File outputVcf
     # Output: File? outputVcfIndex
 
-
+# Could do a bcftools query -l outputVcf | head -n 1 -> filelist
+# That you could put in a file? To vcftools select (or use in filter)
 
 
     ##------------------------------------------------
